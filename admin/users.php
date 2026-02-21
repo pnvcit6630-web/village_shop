@@ -1,8 +1,10 @@
 <?php
-include("../config/db.php");
+require_once("../config/db.php");
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// 🔒 Admin Guard
 if (!isset($_SESSION['admin_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit;
@@ -26,20 +28,22 @@ if (isset($_POST['add_user'])) {
     $chk->store_result();
 
     if ($chk->num_rows > 0) {
-        $msg = "❌ อีเมลนี้ถูกใช้งานแล้ว";
+        $msg = "<div class='alert alert-danger'>❌ อีเมลนี้ถูกใช้งานแล้ว</div>";
     } else {
+
         $stmt = $conn->prepare(
             "INSERT INTO users (name,email,password,role)
              VALUES (?,?,?,?)"
         );
         $stmt->bind_param("ssss", $name, $email, $pass, $role);
         $stmt->execute();
-        $msg = "✅ เพิ่มผู้ใช้เรียบร้อยแล้ว";
+
+        $msg = "<div class='alert alert-success'>✅ เพิ่มผู้ใช้เรียบร้อย</div>";
     }
 }
 
 /* =====================
-   ✏️ แก้ไขผู้ใช้
+   ✏️ แก้ไข
 ===================== */
 if (isset($_POST['edit_user'])) {
 
@@ -50,147 +54,271 @@ if (isset($_POST['edit_user'])) {
     $stmt = $conn->prepare(
         "UPDATE users SET name=?, role=? WHERE id=?"
     );
+
     $stmt->bind_param("ssi", $name, $role, $id);
     $stmt->execute();
 
-    $msg = "✏️ แก้ไขข้อมูลผู้ใช้เรียบร้อย";
+    $msg = "<div class='alert alert-success'>✏️ แก้ไขเรียบร้อย</div>";
 }
 
 /* =====================
-   🗑 ลบผู้ใช้
+   🗑 ลบ
 ===================== */
 if (isset($_GET['delete'])) {
 
     $del_id = intval($_GET['delete']);
 
     if ($del_id == $_SESSION['admin_id']) {
-        $msg = "❌ ไม่สามารถลบตัวเองได้";
+        $msg = "<div class='alert alert-danger'>❌ ไม่สามารถลบตัวเองได้</div>";
     } else {
         $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
         $stmt->bind_param("i", $del_id);
         $stmt->execute();
-        $msg = "🗑 ลบผู้ใช้เรียบร้อย";
+        $msg = "<div class='alert alert-warning'>🗑 ลบผู้ใช้เรียบร้อย</div>";
     }
 }
 
-/* 👤 ดึงรายชื่อผู้ใช้ */
-$users = $conn->query("SELECT id,name,email,role FROM users ORDER BY id DESC");
+$users = $conn->query(
+    "SELECT id,name,email,role FROM users ORDER BY id DESC"
+);
 ?>
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
+
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <title>จัดการผู้ใช้</title>
 
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
 <style>
-body{font-family:Arial;background:#f4f4f4;padding:20px}
-.box{background:#fff;padding:20px;border-radius:8px;margin-bottom:20px}
-input,select{padding:6px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ccc;padding:8px;text-align:center}
-th{background:#eee}
-.role-admin{color:#d32f2f;font-weight:bold}
-.role-user{color:#2e7d32;font-weight:bold}
-.msg{margin-bottom:15px;font-weight:bold}
 
-.menu a{
-    background:#1976d2;color:#fff;padding:8px 12px;
-    border-radius:5px;margin-right:5px;text-decoration:none
+body{
+    background:#f1f4f9;
+    font-family:'Segoe UI',sans-serif;
 }
 
-.btn{
-    padding:5px 10px;
-    border-radius:5px;
+/* Sidebar */
+.sidebar{
+    min-height:100vh;
+    background:linear-gradient(180deg,#667eea,#764ba2);
+    color:white;
+}
+
+.sidebar a{
+    color:white;
+    padding:12px;
+    display:block;
+    text-decoration:none;
+    border-radius:8px;
+    margin-bottom:5px;
+}
+
+.sidebar a:hover{
+    background:rgba(255,255,255,0.2);
+}
+
+/* Card */
+.card-main{
     border:none;
-    cursor:pointer;
-    color:#fff;
-    font-size:13px
+    border-radius:15px;
+    box-shadow:0 10px 25px rgba(0,0,0,0.08);
 }
-.edit{background:#4caf50}
-.del{background:#f44336}
-.edit:hover{background:#388e3c}
-.del:hover{background:#d32f2f}
+
+/* Table */
+.table thead{
+    background:#667eea;
+    color:white;
+}
+
+.table tbody tr:hover{
+    background:#f8f9ff;
+}
+
+/* Buttons */
+.btn-save{
+    background:#198754;
+    border:none;
+    border-radius:20px;
+    color:white;
+}
+
+.btn-delete{
+    background:#dc3545;
+    border:none;
+    border-radius:20px;
+    color:white;
+}
+
+.btn-save:hover,
+.btn-delete:hover{
+    opacity:0.9;
+}
+
+/* Header */
+.header-title{
+    font-weight:bold;
+}
+
 </style>
+
 </head>
 <body>
 
-<h2>👤 จัดการผู้ใช้</h2>
+<div class="container-fluid">
+<div class="row">
 
-<div class="menu">
-    <a href="dashboard.php">🏠 Dashboard</a>
-    <a href="../logout.php">🚪 ออกจากระบบ</a>
+<!-- Sidebar -->
+<div class="col-lg-2 col-md-3 sidebar p-3">
+
+<h4 class="text-center mb-4">
+<i class="bi bi-speedometer2"></i> Admin
+</h4>
+
+<a href="dashboard.php">
+<i class="bi bi-house"></i> Dashboard
+</a>
+
+<a href="orders.php">
+<i class="bi bi-box"></i> ออเดอร์
+</a>
+
+<a href="users.php">
+<i class="bi bi-people"></i> ผู้ใช้
+</a>
+
+<a href="add_product.php">
+<i class="bi bi-plus-circle"></i> เพิ่มสินค้า
+</a>
+
+<a href="../logout.php">
+<i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+</a>
+
 </div>
 
-<br>
+<!-- Main Content -->
+<div class="col-lg-10 col-md-9 p-4">
 
-<?php if($msg): ?>
-    <div class="msg"><?= $msg ?></div>
-<?php endif; ?>
+<h3 class="mb-3">
+<i class="bi bi-people"></i> จัดการผู้ใช้
+</h3>
 
-<!-- ➕ เพิ่มผู้ใช้ -->
-<div class="box">
-<h3>➕ เพิ่มผู้ใช้</h3>
+<?= $msg ?>
+
+<div class="card card-main p-4 mb-4">
+
+<h5 class="mb-3">
+<i class="bi bi-person-plus"></i> เพิ่มผู้ใช้ใหม่
+</h5>
+
 <form method="post">
-    <input type="text" name="name" placeholder="ชื่อผู้ใช้" required>
-    <input type="email" name="email" placeholder="อีเมล" required>
-    <input type="password" name="password" placeholder="รหัสผ่าน" required>
-    <select name="role">
-        <option value="user">ผู้ใช้</option>
-        <option value="admin">แอดมิน</option>
-    </select>
-    <br><br>
-    <button class="btn edit" name="add_user">บันทึกผู้ใช้</button>
-</form>
+<div class="row g-2">
+
+<div class="col-md-3">
+<input type="text" name="name" class="form-control" placeholder="ชื่อ" required>
 </div>
 
-<!-- 📋 ตารางผู้ใช้ -->
-<div class="box">
-<h3>📋 รายชื่อผู้ใช้</h3>
+<div class="col-md-3">
+<input type="email" name="email" class="form-control" placeholder="Email" required>
+</div>
 
-<table>
+<div class="col-md-3">
+<input type="password" name="password" class="form-control" placeholder="Password" required>
+</div>
+
+<div class="col-md-2">
+<select name="role" class="form-select">
+<option value="user">User</option>
+<option value="admin">Admin</option>
+</select>
+</div>
+
+<div class="col-md-1 d-grid">
+<button name="add_user" class="btn btn-save">
+<i class="bi bi-save"></i>
+</button>
+</div>
+
+</div>
+</form>
+
+</div>
+
+<div class="card card-main p-3">
+<div class="table-responsive">
+
+<table class="table table-hover align-middle text-center">
+
+<thead>
 <tr>
-    <th>ID</th>
-    <th>ชื่อ</th>
-    <th>Email</th>
-    <th>สิทธิ์</th>
-    <th>จัดการ</th>
+<th>ID</th>
+<th>ชื่อ</th>
+<th>Email</th>
+<th>สิทธิ์</th>
+<th>จัดการ</th>
 </tr>
+</thead>
+
+<tbody>
 
 <?php while($u = $users->fetch_assoc()): ?>
 <tr>
 <form method="post">
-    <td><?= $u['id'] ?></td>
 
-    <td>
-        <input type="text" name="name"
-               value="<?= htmlspecialchars($u['name']) ?>" required>
-    </td>
+<td><?= $u['id'] ?></td>
 
-    <td><?= htmlspecialchars($u['email']) ?></td>
+<td>
+<input type="text"
+name="name"
+value="<?= htmlspecialchars($u['name']) ?>"
+class="form-control">
+</td>
 
-    <td>
-        <select name="role">
-            <option value="user" <?= $u['role']=='user'?'selected':'' ?>>user</option>
-            <option value="admin" <?= $u['role']=='admin'?'selected':'' ?>>admin</option>
-        </select>
-    </td>
+<td><?= htmlspecialchars($u['email']) ?></td>
 
-    <td>
-        <input type="hidden" name="id" value="<?= $u['id'] ?>">
-        <button class="btn edit" name="edit_user">💾 แก้ไข</button>
+<td>
+<select name="role" class="form-select">
+<option value="user" <?= $u['role']=="user"?"selected":"" ?>>User</option>
+<option value="admin" <?= $u['role']=="admin"?"selected":"" ?>>Admin</option>
+</select>
+</td>
 
-        <?php if($u['id'] != $_SESSION['admin_id']): ?>
-            <a class="btn del"
-               href="?delete=<?= $u['id'] ?>"
-               onclick="return confirm('ลบผู้ใช้นี้ใช่หรือไม่?')">
-               🗑 ลบ
-            </a>
-        <?php endif; ?>
-    </td>
+<td>
+<input type="hidden" name="id" value="<?= $u['id'] ?>">
+
+<button name="edit_user"
+class="btn btn-save btn-sm mb-1">
+<i class="bi bi-save"></i>
+</button>
+
+<?php if($u['id'] != $_SESSION['admin_id']): ?>
+<a href="?delete=<?= $u['id'] ?>"
+class="btn btn-delete btn-sm"
+onclick="return confirm('ลบผู้ใช้นี้?')">
+<i class="bi bi-trash"></i>
+</a>
+<?php endif; ?>
+
+</td>
+
 </form>
 </tr>
 <?php endwhile; ?>
+
+</tbody>
+
 </table>
+
+</div>
+</div>
+
+</div>
+</div>
 </div>
 
 </body>

@@ -1,6 +1,10 @@
 <?php
 include("../config/db.php");
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // 🔒 Admin Guard
 if (!isset($_SESSION['admin_id']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
@@ -12,7 +16,6 @@ if (isset($_GET['delete'])) {
 
     $id = intval($_GET['delete']);
 
-    // ดึงชื่อรูปก่อน
     $stmt = $conn->prepare("SELECT image FROM products WHERE id=?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
@@ -21,166 +24,257 @@ if (isset($_GET['delete'])) {
 
     if ($product) {
 
-        // ลบไฟล์รูป
         if (!empty($product['image'])) {
+
             $imgPath = "../uploads/products/" . $product['image'];
+
             if (file_exists($imgPath)) {
                 unlink($imgPath);
             }
         }
 
-        // ลบข้อมูลใน DB
         $del = $conn->prepare("DELETE FROM products WHERE id=?");
         $del->bind_param("i", $id);
         $del->execute();
     }
 
-    // รีเฟรชหน้า
     header("Location: dashboard.php");
     exit;
 }
 
-/* 📊 สรุป */
+/* 📊 Summary */
 $user_count    = $conn->query("SELECT COUNT(*) c FROM users")->fetch_assoc()['c'];
 $product_count = $conn->query("SELECT COUNT(*) c FROM products")->fetch_assoc()['c'];
 $order_count   = $conn->query("SELECT COUNT(*) c FROM orders")->fetch_assoc()['c'];
 $pending       = $conn->query("SELECT COUNT(*) c FROM orders WHERE status='pending'")->fetch_assoc()['c'];
 
-/* 🛒 สินค้า */
 $products = $conn->query("SELECT * FROM products ORDER BY id DESC");
 ?>
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
+
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <title>Admin Dashboard</title>
 
-<style>
-body{
-    font-family:Arial;
-    background:#f4f4f4;
-    padding:20px
-}
-.box{
-    background:#fff;
-    padding:20px;
-    border-radius:8px;
-    text-align:center
-}
-.grid{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:10px;
-    margin-bottom:20px
-}
-.menu a{
-    background:#1976d2;
-    color:#fff;
-    padding:10px 15px;
-    border-radius:5px;
-    margin-right:5px;
-    text-decoration:none
-}
-.menu a:hover{background:#0d47a1}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-/* 🛒 สินค้า */
-.products{
-    display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
-    gap:15px;
+<style>
+
+body{
+    background:#f1f4f9;
+    font-family:'Segoe UI',sans-serif;
 }
-.card{
-    background:#fff;
-    border-radius:10px;
-    box-shadow:0 4px 10px rgba(0,0,0,.1);
-    overflow:hidden;
+
+/* Sidebar */
+.sidebar{
+    min-height:100vh;
+    background:linear-gradient(180deg,#667eea,#764ba2);
+    color:white;
 }
-.card img{
-    width:100%;
-    height:180px;
+
+.sidebar a{
+    color:white;
+    padding:12px;
+    display:block;
+    text-decoration:none;
+    border-radius:8px;
+    margin-bottom:5px;
+}
+
+.sidebar a:hover{
+    background:rgba(255,255,255,0.2);
+}
+
+/* Stat Cards */
+.card-stat{
+    border:none;
+    border-radius:15px;
+    color:white;
+    padding:20px;
+}
+
+.bg-users{ background:linear-gradient(45deg,#36d1dc,#5b86e5); }
+.bg-products{ background:linear-gradient(45deg,#ff9966,#ff5e62); }
+.bg-orders{ background:linear-gradient(45deg,#00b09b,#96c93d); }
+.bg-pending{ background:linear-gradient(45deg,#f7971e,#ffd200); }
+
+/* Product Card */
+.product-card{
+    border:none;
+    border-radius:15px;
+    transition:0.3s;
+}
+
+.product-card:hover{
+    transform:translateY(-6px);
+    box-shadow:0 15px 30px rgba(0,0,0,0.15);
+}
+
+.product-img{
+    height:350px;
     object-fit:cover;
 }
-.card .info{
-    padding:12px;
-}
-.card h4{
-    margin:0 0 5px 0;
-}
-.card p{
-    font-size:13px;
-    color:#555;
-    height:40px;
+
+/* จำกัด description */
+.product-desc{
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
     overflow:hidden;
 }
-.price{
-    font-weight:bold;
-    color:#2e7d32;
-}
-.delete-btn{
-    display:inline-block;
-    margin-top:8px;
-    background:#e53935;
-    color:#fff;
-    padding:6px 10px;
-    border-radius:5px;
-    font-size:13px;
-    text-decoration:none;
-}
-.delete-btn:hover{background:#c62828}
+
 </style>
+
 </head>
 <body>
 
-<h2>📊 Admin Dashboard</h2>
-<p>ยินดีต้อนรับ <?= htmlspecialchars($_SESSION['admin_name']) ?></p>
+<div class="container-fluid">
 
-<div class="menu">
-    <a href="dashboard.php">🏠 หน้าแรก</a>
-    <a href="orders.php">📦 ออเดอร์</a>
-    <a href="users.php">👤 ผู้ใช้</a>
-    <a href="add_product.php">➕ เพิ่มสินค้า</a>
-    <a href="../logout.php">🚪 ออกจากระบบ</a>
+<div class="row">
+
+<!-- Sidebar -->
+<div class="col-lg-2 col-md-3 sidebar p-3">
+
+<h4 class="text-center mb-4">
+<i class="bi bi-speedometer2"></i>
+Admin
+</h4>
+
+<a href="dashboard.php">
+<i class="bi bi-house"></i> Dashboard
+</a>
+
+<a href="orders.php">
+<i class="bi bi-box"></i> ออเดอร์
+</a>
+
+<a href="users.php">
+<i class="bi bi-people"></i> ผู้ใช้
+</a>
+
+<a href="add_product.php">
+<i class="bi bi-plus-circle"></i> เพิ่มสินค้า
+</a>
+
+<a href="../logout.php">
+<i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+</a>
+
 </div>
 
-<br>
 
-<div class="grid">
-    <div class="box">👤 ผู้ใช้ทั้งหมด<br><b><?= $user_count ?></b></div>
-    <div class="box">📦 สินค้า<br><b><?= $product_count ?></b></div>
-    <div class="box">🧾 ออเดอร์<br><b><?= $order_count ?></b></div>
-    <div class="box">⏳ รอตรวจสอบ<br><b><?= $pending ?></b></div>
+<!-- Main Content -->
+<div class="col-lg-10 col-md-9 p-4">
+
+<h3>
+ยินดีต้อนรับ,
+<?= htmlspecialchars($_SESSION['admin_name']) ?>
+</h3>
+
+<hr>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+
+<div class="col-lg-3 col-sm-6">
+<div class="card-stat bg-users">
+<h5><i class="bi bi-people"></i> ผู้ใช้</h5>
+<h2><?= $user_count ?></h2>
+</div>
 </div>
 
-<h3>🛒 สินค้าที่เพิ่มล่าสุด</h3>
+<div class="col-lg-3 col-sm-6">
+<div class="card-stat bg-products">
+<h5><i class="bi bi-bag"></i> สินค้า</h5>
+<h2><?= $product_count ?></h2>
+</div>
+</div>
 
-<div class="products">
+<div class="col-lg-3 col-sm-6">
+<div class="card-stat bg-orders">
+<h5><i class="bi bi-receipt"></i> ออเดอร์</h5>
+<h2><?= $order_count ?></h2>
+</div>
+</div>
+
+<div class="col-lg-3 col-sm-6">
+<div class="card-stat bg-pending">
+<h5><i class="bi bi-clock"></i> รอตรวจสอบ</h5>
+<h2><?= $pending ?></h2>
+</div>
+</div>
+
+</div>
+
+
+<!-- Products -->
+<h4 class="mb-3">
+<i class="bi bi-bag"></i>
+สินค้าทั้งหมด
+</h4>
+
+<div class="row g-4">
+
 <?php while($p = $products->fetch_assoc()): ?>
-    <div class="card">
 
-        <?php if(!empty($p['image']) && file_exists("../uploads/products/".$p['image'])): ?>
-            <img src="../uploads/products/<?= htmlspecialchars($p['image']) ?>" alt="สินค้า">
-        <?php else: ?>
-            <img src="../uploads/no-image.png" alt="no image">
-        <?php endif; ?>
+<div class="col-xl-3 col-lg-4 col-md-6 col-12">
 
-        <div class="info">
-            <h4><?= htmlspecialchars($p['name']) ?></h4>
-            <p><?= htmlspecialchars($p['description']) ?></p>
+<div class="card product-card h-100">
 
-            <div class="price">
-                <?= number_format($p['price'],2) ?> บาท
-            </div>
+<?php if(!empty($p['image']) && file_exists("../uploads/products/".$p['image'])): ?>
 
-            <!-- 🗑 ปุ่มลบสินค้า -->
-            <a class="delete-btn"
-               href="dashboard.php?delete=<?= $p['id'] ?>"
-               onclick="return confirm('⚠️ ต้องการลบสินค้านี้จริงหรือไม่?');">
-               🗑 ลบสินค้า
-            </a>
-        </div>
+<img src="../uploads/products/<?= htmlspecialchars($p['image']) ?>"
+class="product-img w-100">
 
-    </div>
+<?php else: ?>
+
+<img src="../uploads/no-image.png"
+class="product-img w-100">
+
+<?php endif; ?>
+
+<div class="card-body d-flex flex-column">
+
+<h6 class="fw-bold">
+<?= htmlspecialchars($p['name']) ?>
+</h6>
+
+<p class="text-muted small product-desc flex-grow-1">
+<?= htmlspecialchars($p['description']) ?>
+</p>
+
+<h6 class="text-success fw-bold">
+<?= number_format($p['price'],2) ?> บาท
+</h6>
+
+<a href="dashboard.php?delete=<?= $p['id'] ?>"
+class="btn btn-danger btn-sm w-100 mt-2"
+onclick="return confirm('ต้องการลบสินค้านี้หรือไม่?')">
+
+<i class="bi bi-trash"></i>
+ลบสินค้า
+
+</a>
+
+</div>
+
+</div>
+
+</div>
+
 <?php endwhile; ?>
+
+</div>
+
+</div>
+
+</div>
+
 </div>
 
 </body>
